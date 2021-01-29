@@ -7,8 +7,20 @@ try:
     from os.path import isfile, join
     import hashlib
     import pyperclip
+    import getpass
+    import msvcrt
+    import traceback
 
     clear = lambda: os.system('cls')
+
+    def checkYes(mess):
+        return len(mess) and mess.strip().lower()[0] == "y"
+
+
+    def press_any_key():
+        print()
+        print("Press any key to continue...")
+        msvcrt.getch()
 
 
     class Encryptor:
@@ -51,11 +63,191 @@ try:
                 file.write(dec)
 
 
-    key_hash = hashlib.sha256(input("Gimme the sauce:").encode('utf-8')).hexdigest()
-    key = bytes(key_hash[:int(len(key_hash) / 2)], 'utf-8')
-    print()
+    class Command:
+        def __init__(self, opt_string, func):
+            self.func = func
+            self.opt_string = opt_string
 
-    encryptor = Encryptor(key)
+
+    class Menu:
+        def __init__(self):
+            # Creates encryptor
+            self.encryptor = self.get_encryptor()
+
+            # Set flag to true to close program
+            self.close = False
+
+            # Creates commands
+            self.commands = (
+                Command("Change the Sauce", Menu.update_encryptor),
+                Command("Setup Validation", Menu.validation_setup),
+                Command("Check Validation", Menu.check_validate_menu_option),
+                Command("Exit Program", Menu.close_program)
+            )
+            self.cmd_index = 0
+
+        #TODO: Add all commands below
+        #TODO: Add folder navigation when selecting file to decrypt
+            '''
+            print("Choose an option: ")
+        print("   1. Encrypt input to file")
+        print("   2. Encrypt input print")
+        print("   4. Encrypt file to file")
+        print("   5. Decrypt file print")
+        print("   6. Decrypt file to file")
+        print("   8. List files")
+        print("   9. List files with string")
+        print("   0. Clear clipboard")
+        print("   7. Exit")
+            '''
+
+            # Runs initial validation
+            self.run_validation()
+            # Runs main menu
+            self.run_main_menu()
+
+        # Call this to get a new encryptor class with the prompted password
+        @staticmethod
+        def get_encryptor():
+            # Hashes the hidden input
+            key_hash = hashlib.sha256(getpass.getpass("Gimme the sauce: ").encode('utf-8')).hexdigest()
+            # Gets half of the hash to use as the key
+            key = bytes(key_hash[:int(len(key_hash) / 2)], 'utf-8')
+            clear()
+            print()
+            # Creates encryptor class
+            return Encryptor(key)
+
+        def close_program(self):
+            clear()
+            if checkYes(input("Are you sure? ")):
+                self.close = True
+
+        def update_encryptor(self):
+            clear()
+            print("CHANGE DAT SAUCE")
+            print("----------------")
+            print()
+
+            self.encryptor = self.get_encryptor()
+
+        def run_main_menu(self):
+            while True:
+                clear()
+                print("SELECT AN OPTION:")
+                print("-----------")
+
+                for idx in range(len(self.commands)):
+                    print((">" if idx == self.cmd_index else " "), self.commands[idx].opt_string)
+
+                print()
+                print()
+                print("This is where the cursor lives:")
+
+                nextKey = msvcrt.getch()
+                if nextKey == b"P" and self.cmd_index < len(self.commands) - 1:
+                    self.cmd_index += 1
+                if nextKey == b"H" and self.cmd_index > 0:
+                    self.cmd_index -= 1
+                if nextKey == b"\r":
+                    self.commands[self.cmd_index].func(self)
+
+                # End Program
+                if self.close:
+                    break
+
+        # Call this right after getting the encrytor key to perform initial setup for the VALIDATE file
+        def run_validation(self):
+            clear()
+            # Allows user to validate the password they entered by checking a validation file
+            if not os.listdir().__contains__("VALIDATE"):
+                # If Yes, creates file
+                if checkYes(input("Would you like to create a validation file? ")):
+                    self.create_validation_file(self.get_validation_message())
+            else:
+                self.check_validation()
+
+        # Call this whenever you want to invoke a setup of the VALIDATE file from the menu
+        def validation_setup(self):
+            clear()
+            print("VALIDATION SETUP")
+            print("----------------")
+            print()
+
+            if not os.listdir().__contains__("VALIDATE"):
+                # If Yes, creates file
+                if checkYes(input("Would you like to create a validation file? ")):
+                    self.create_validation_file(self.get_validation_message())
+
+            else:
+                with open("VALIDATE", "wb") as file:
+                    file.truncate()
+                    file.write(self.get_validation_message())
+
+            press_any_key()
+
+        # Asks for a password secret validation message and returns its encrypted form
+        def get_validation_message(self):
+            valid = False
+            while not valid:
+                # Asks for message
+                validate_mess = getpass.getpass("Enter a message to validate: ")
+                # Confirms the message
+                if getpass.getpass("Confirm your message: ") == validate_mess:
+                    valid = True
+                else:
+                    print()
+                    print("Confirmation failed! Try again.")
+                    print()
+            return self.encryptor.encrypt(validate_mess, self.encryptor.key)
+
+        # Creates a new validation file with the given message (message must be given encrypted)
+        @staticmethod
+        def create_validation_file(validate_mess):
+            with open("VALIDATE", "wb") as file:
+                file.write(validate_mess)
+
+        # Executable as a menu option
+        def check_validate_menu_option(self):
+            clear()
+            if os.listdir().__contains__("VALIDATE"):
+                self.check_validation()
+            else:
+                print("Validation file not found. Please run setup")
+            press_any_key()
+
+        # Asks user if they would like to confirm validation. Goes through verification procedure
+        def check_validation(self):
+            # Asks user to try validation
+            if checkYes(input("Would you like to validate? ")):
+                # Reads encrypted file
+                with open("VALIDATE", 'rb') as file:
+                    cipherText = file.read()
+                # Asks user for message check
+                valid = False
+                while not valid:
+                    clear()
+                    mess = input("Please enter the message in VALIDATE: ")
+                    # Checks if message matches decrypted validation file
+                    dec = self.encryptor.decrypt(cipherText, self.encryptor.key)
+                    failed = False
+                    try:
+                        dec.decode("utf-8")
+                    # Exception gets thrown if decryption done with wrong password
+                    except Exception:
+                        failed = True
+                    if failed or mess != self.encryptor.decrypt(cipherText, self.encryptor.key).decode("utf-8"):
+                        print(">>> Validation Failed!!!")
+                        print()
+                        if not checkYes(input("Would you like to re-enter your message? ")):
+                            valid = True
+                    else:
+                        print(">>> Validation Successful!!!")
+                        print()
+                        valid = True
+
+
+    MENU = Menu()
 
     while True:
         print("Choose an option: ")
@@ -192,4 +384,5 @@ try:
 
 except Exception as e:
     print(e)
+    traceback.print_exc()
     input()
