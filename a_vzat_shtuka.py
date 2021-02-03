@@ -8,10 +8,11 @@ try:
     import hashlib
     import pyperclip
     import getpass
-    import msvcrt
     import traceback
 
-    if os.name != "nt":
+    if os.name == "nt":
+        import msvcrt
+    else:
         import curses
         stdscr = curses.initscr()
 
@@ -147,11 +148,10 @@ try:
                 print()
                 print("This is where the cursor lives:")
 
-                nextKey = msvcrt.getch()
-                if os.name != "nt":
+                if os.name == "nt":
+                    nextKey = msvcrt.getch()
+                else:
                     nextKey = stdscr.getch()
-
-                print(nextKey)
 
                 if (nextKey == b"P" and os.name == "nt") or (os.name != "nt" and nextKey == curses.KEY_DOWN):
                     file_idx += 1
@@ -294,8 +294,9 @@ try:
                 print()
                 print("This is where the cursor lives:")
 
-                nextKey = msvcrt.getch()
-                if os.name != "nt":
+                if os.name == "nt":
+                    nextKey = msvcrt.getch()
+                else:
                     nextKey = stdscr.getch()
 
                 if (nextKey == b"P" and os.name == "nt") or (os.name != "nt" and nextKey == curses.KEY_DOWN):
