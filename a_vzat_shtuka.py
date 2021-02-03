@@ -200,6 +200,7 @@ try:
             all_text = letters + caps + nums + symbols
             pyperclip.copy("".join([random.choice(all_text) for _ in range(length)]))
             print("Your password has been copied!")
+            press_any_key()
 
         def clear_clipboard(self):
             clear()
