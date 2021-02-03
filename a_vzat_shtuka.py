@@ -11,7 +11,19 @@ try:
     import msvcrt
     import traceback
 
-    clear = lambda: os.system('cls')
+    if os.name != "nt":
+        import curses
+        stdscr = curses.initscr()
+
+    # define our clear function
+    def clear():
+        # for windows
+        if os.name == 'nt':
+            _ = os.system('cls')
+
+            # for mac and linux(here, os.name is 'posix')
+        else:
+            _ = os.system('clear')
 
     def checkYes(mess):
         return len(mess) and mess.strip().lower()[0] == "y"
@@ -82,24 +94,14 @@ try:
                 Command("Change the Sauce", Menu.update_encryptor),
                 Command("Setup Validation", Menu.validation_setup),
                 Command("Check Validation", Menu.check_validate_menu_option),
-                Command("Exit Program", Menu.close_program)
+                Command("Encrypt INPUT -> FILE", Menu.enc_inp2file),
+                Command("Encrypt FILE -> FILE", Menu.enc_file2file),
+                Command("Decrypt FILE -> CLIPBOARD", Menu.dec_file2clip),
+                Command("Decrypt FILE -> FILE", Menu.dec_file2file),
+                Command("Clear Clipboard", Menu.clear_clipboard),
+                Command("Exit Program", Menu.close_program),
             )
             self.cmd_index = 0
-
-        #TODO: Add all commands below
-        #TODO: Add folder navigation when selecting file to decrypt
-            '''
-            print("Choose an option: ")
-        print("   1. Encrypt input to file")
-        print("   2. Encrypt input print")
-        print("   4. Encrypt file to file")
-        print("   5. Decrypt file print")
-        print("   6. Decrypt file to file")
-        print("   8. List files")
-        print("   9. List files with string")
-        print("   0. Clear clipboard")
-        print("   7. Exit")
-            '''
 
             # Runs initial validation
             self.run_validation()
@@ -117,6 +119,154 @@ try:
             print()
             # Creates encryptor class
             return Encryptor(key)
+
+        @staticmethod
+        def file_navigator(header_message="SEARCH FILE"):
+            script_pathlist = __file__.split("\\")
+            script_filename = script_pathlist[-1]
+            current_path = script_pathlist[0:len(script_pathlist) - 1]
+
+            def get_path(pathlist):
+                return "/".join(pathlist)
+
+            def get_files(pathlist):
+                return [".."] + [i for i in os.listdir(get_path(pathlist)) if i != script_filename]
+
+            files = get_files(current_path)
+            file_idx = 0
+
+            while True:
+                clear()
+                print(header_message, "(ESC to cancel)")
+                print("-----------")
+
+                for idx in range(len(files)):
+                    print((">" if idx == file_idx else " "), files[idx])
+
+                print()
+                print()
+                print("This is where the cursor lives:")
+
+                nextKey = msvcrt.getch()
+                if os.name != "nt":
+                    nextKey = stdscr.getch()
+
+                print(nextKey)
+
+                if (nextKey == b"P" and os.name == "nt") or (os.name != "nt" and nextKey == curses.KEY_DOWN):
+                    file_idx += 1
+
+                    if file_idx >= len(files):
+                        file_idx = 0
+                if (nextKey == b"H" and os.name == "nt") or (os.name != "nt" and nextKey == curses.KEY_UP):
+                    file_idx -= 1
+
+                    if file_idx < 0:
+                        file_idx = len(files) - 1
+                if (nextKey == b"\r" and os.name == "nt") or (os.name != "nt" and nextKey == curses.KEY_ENTER):
+                    if files[file_idx] == "..":
+                        current_path.pop(-1)
+                        files = get_files(current_path)
+                        file_idx = 0
+                    elif os.path.isdir(get_path(current_path + [files[file_idx]])):
+                        current_path.append(files[file_idx])
+                        files = get_files(current_path)
+                        file_idx = 0
+                    else:
+                        current_path.append(files[file_idx])
+                        return get_path(current_path)
+                if (nextKey == b"\x1b" and os.name == "nt") or (os.name != "nt" and nextKey == 27):
+                    return -1
+
+        def clear_clipboard(self):
+            clear()
+
+            pyperclip.copy(" ")
+            print("clipboard cleared")
+            print()
+
+            press_any_key()
+
+        def dec_file2clip(self):
+            # Prompts user to select an existing file
+            filename = self.file_navigator("DECRYPT FILE -> CLIPBOARD")
+            clear()
+
+            if filename != -1:
+                # Decrypts and prints
+                with open(filename, 'rb') as file:
+                    cipherText = file.read()
+                dec = Encryptor.decrypt(cipherText, self.encryptor.key)
+
+                try:
+                    pyperclip.copy(str(dec)[2:len(dec) + 2])
+                    print("Your message has been copied")  # For actual message: str(dec))
+                except Exception as e:
+                    print("An Error Occurred while decrypting:")
+                    print(e)
+
+            press_any_key()
+
+        def dec_file2file(self):
+            # Prompts user to select an existing file
+            filename = self.file_navigator("DECRYPT FILE -> FILE")
+            clear()
+
+            if filename != -1:
+                self.encryptor.decrypt_file(filename)
+
+                remove = input("Remove old file? (y/n)")
+
+                if checkYes(remove):
+                    os.remove(filename)
+                    print("FILE REMOVED")
+                else:
+                    print("FILE NOT REMOVED")
+
+            press_any_key()
+
+        def enc_file2file(self):
+            # Prompts user to select an existing file
+            filename = self.file_navigator("ENCRYPT FILE -> FILE")
+            clear()
+
+            if filename != -1:
+                self.encryptor.encrypt_file(filename)
+
+                remove = input("Remove old file? (y/n)")
+
+                if checkYes(remove):
+                    os.remove(filename)
+                    print("FILE REMOVED")
+                else:
+                    print("FILE NOT REMOVED")
+
+            press_any_key()
+
+        def enc_inp2file(self):
+            clear()
+            print("ENCRYPT INPUT -> FILE")
+            print("----------------")
+
+            # Prompts user to select a filename that does not exist yet
+            valid = False
+            while not valid:
+                filename = input("Name your file: ")
+                if os.path.exists(filename):
+                    print("Error: File already exists!")
+                else:
+                    valid = True
+                print()
+
+            # Prompts user to enter desired message
+            message = input("What message would you like to encrypt? ")
+
+            # Save message to desired file in encrypted form
+            with open(filename + ".enc", "wb") as file:
+                enc = Encryptor.encrypt(message, self.encryptor.key)
+                file.write(enc)
+
+            press_any_key()
 
         def close_program(self):
             clear()
@@ -145,11 +295,20 @@ try:
                 print("This is where the cursor lives:")
 
                 nextKey = msvcrt.getch()
-                if nextKey == b"P" and self.cmd_index < len(self.commands) - 1:
+                if os.name != "nt":
+                    nextKey = stdscr.getch()
+
+                if (nextKey == b"P" and os.name == "nt") or (os.name != "nt" and nextKey == curses.KEY_DOWN):
                     self.cmd_index += 1
-                if nextKey == b"H" and self.cmd_index > 0:
+
+                    if self.cmd_index >= len(self.commands):
+                        self.cmd_index = 0
+                if (nextKey == b"H" and os.name == "nt") or (os.name != "nt" and nextKey == curses.KEY_UP):
                     self.cmd_index -= 1
-                if nextKey == b"\r":
+
+                    if self.cmd_index < 0:
+                        self.cmd_index = len(self.commands) - 1
+                if (nextKey == b"\r" and os.name == "nt") or (os.name != "nt" and nextKey == curses.KEY_ENTER):
                     self.commands[self.cmd_index].func(self)
 
                 # End Program
@@ -166,6 +325,8 @@ try:
                     self.create_validation_file(self.get_validation_message())
             else:
                 self.check_validation()
+
+            press_any_key()
 
         # Call this whenever you want to invoke a setup of the VALIDATE file from the menu
         def validation_setup(self):
@@ -246,141 +407,7 @@ try:
                         print()
                         valid = True
 
-
     MENU = Menu()
-
-    while True:
-        print("Choose an option: ")
-        print("   1. Encrypt input to file")
-        print("   2. Encrypt input print")
-        print("   4. Encrypt file to file")
-        print("   5. Decrypt file print")
-        print("   6. Decrypt file to file")
-        print("   8. List files")
-        print("   9. List files with string")
-        print("   0. Clear clipboard")
-        print("   7. Exit")
-        print()
-        choice = input("select an option: ")
-        print()
-
-        if choice == "1":
-            # Prompts user to select a filename that does not exist yet
-            valid = False
-            while not valid:
-                filename = input("Name your file: ")
-                if os.path.exists(filename):
-                    print("Error: File already exists!")
-                else:
-                    valid = True
-                print()
-
-            # Prompts user to enter desired message
-            message = input("What message would you like to encrypt? ")
-
-            # Save message to desired file in encrypted form
-            with open(filename + ".enc", "wb") as file:
-                enc = Encryptor.encrypt(message, encryptor.key)
-                file.write(enc)
-
-        elif choice == "8":
-            # List file names in directory
-            [print("|-- ", file) for file in os.listdir()]
-
-        elif choice == "9":
-            string = input("Search for files including: ")
-
-            print()
-            [print("|-- ", file) for file in os.listdir() if string in file]
-
-        elif choice == "0":
-            pyperclip.copy(" ")
-            print("clipboard cleared")
-
-        elif choice == "2":
-            # Prints the encrypted version of a desired message
-            message = input("What message would you like to encrypt? ")
-
-            print(Encryptor.encrypt(message, encryptor.key))
-
-        elif choice == "3":
-            print("Read the list dumb ass. '3' isn't an option")
-
-        elif choice == "4":
-            # Prompts user to select an existing file
-            valid = False
-            while not valid:
-                filename = input("What file are you finna encrypt? ")
-                if not os.path.exists(filename):
-                    print("Error: File doesn't exist!")
-                else:
-                    valid = True
-                print()
-
-            encryptor.encrypt_file(filename)
-
-            remove = input("Remove old file? (y/n)")
-
-            if remove == "y":
-                os.remove(filename)
-                print("FILE REMOVED")
-            else:
-                print("FILE NOT REMOVED")
-
-        elif choice == "5":
-            # Prompts user to select an existing file
-            valid = False
-            while not valid:
-                filename = input("What file are you finna decrypt? ")
-                if not os.path.exists(filename):
-                    print("Error: File doesn't exist!")
-                else:
-                    valid = True
-                print()
-
-            # Decrypts and prints
-            with open(filename, 'rb') as file:
-                cipherText = file.read()
-            dec = Encryptor.decrypt(cipherText, encryptor.key)
-
-            print("Your message:")
-            print("has been copied")  # str(dec))
-            try:
-                pyperclip.copy(str(dec)[2:len(dec) + 2])
-            except Exception as e:
-                print(e)
-
-        elif choice == "6":
-            # Prompts user to select an existing file
-            valid = False
-            while not valid:
-                filename = input("What file are you finna decrypt? ")
-                if not os.path.exists(filename):
-                    print("Error: File doesn't exist!")
-                else:
-                    valid = True
-                print()
-
-            encryptor.decrypt_file(filename)
-
-            remove = input("Remove old file? (y/n)")
-
-            if remove == "y":
-                os.remove(filename)
-                print("FILE REMOVED")
-            else:
-                print("FILE NOT REMOVED")
-
-        elif choice == "7":
-            break
-
-        print()
-        input("press enter to continue")
-        clear()
-
-    print()
-    input("press enter to exit")
-    print()
 
 except Exception as e:
     print(e)
