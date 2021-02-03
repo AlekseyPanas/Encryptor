@@ -9,12 +9,14 @@ try:
     import pyperclip
     import getpass
     import traceback
+    import random
 
     if os.name == "nt":
         import msvcrt
     else:
         import curses
         stdscr = curses.initscr()
+        curses.cbreak(False)
 
     # define our clear function
     def clear():
@@ -99,6 +101,7 @@ try:
                 Command("Encrypt FILE -> FILE", Menu.enc_file2file),
                 Command("Decrypt FILE -> CLIPBOARD", Menu.dec_file2clip),
                 Command("Decrypt FILE -> FILE", Menu.dec_file2file),
+                Command("Generate Password", Menu.generate_password),
                 Command("Clear Clipboard", Menu.clear_clipboard),
                 Command("Exit Program", Menu.close_program),
             )
@@ -177,6 +180,26 @@ try:
                         return get_path(current_path)
                 if (nextKey == b"\x1b" and os.name == "nt") or (os.name != "nt" and nextKey == 27):
                     return -1
+
+        def generate_password(self):
+            clear()
+            valid = False
+            while not valid:
+                length = input("Password Length: ")
+                try:
+                    length = int(length)
+                    valid = True
+                except Exception:
+                    print("Enter a valid number")
+
+            clear()
+            letters = "abcdefghijklmnopqrstuvwxyz"
+            caps = letters.upper()
+            nums = "1234567890"
+            symbols = "!@#$%^&*()-=_+,.<>"
+            all_text = letters + caps + nums + symbols
+            pyperclip.copy("".join([random.choice(all_text) for _ in range(length)]))
+            print("Your password has been copied!")
 
         def clear_clipboard(self):
             clear()
