@@ -509,72 +509,143 @@ class CursesMenu(Menu):
     def __init__(self):
         super().__init__()
         self.stdscr = None
+        self.pad = None
         self.block_stack: list[int] = []  # list of y coordinates of current blocks
 
     def commit_block(self):
         """After writing a new content block, call this to record the blocks coordinate to the stack
         and move the cursor to the next line"""
-        content_end = self.stdscr.getyx()[0]
+        content_end = self.pad.getyx()[0]
         self.block_stack.append(content_end)
-        self.stdscr.move(content_end + 1, 0)
+        self.pad.move(content_end + 1, 0)
+        self.refresh_pad()
+
+    def is_enter(self, k: int):
+        return k in [curses.KEY_ENTER, 10, 13]
 
     def init(self):
         self.stdscr = curses.initscr()
+        self.pad = curses.newpad(1000, 1000)
         curses.start_color()
         curses.noecho()
         curses.cbreak()
         #curses.curs_set(0)
         self.stdscr.keypad(True)
+        self.pad.keypad(True)
+        self.stdscr.clear()
+        self.pad.clear()
+
+        self.content_get_str_from_user("Gimme text bruh?", False)
+        self.pad.getch()
+        self.content_divider()
+        self.pad.getch()
         self.content_press_any_key()
+        self.pop_contents(2)
+        self.refresh_pad()
+        self.pad.getch()
+        self.content_get_bool_from_user("yes or no hmmmmm?")
+        self.pad.getch()
 
     def destroy(self):
         curses.echo()
         self.stdscr.keypad(False)
+        self.pad.keypad(False)
         curses.nocbreak()
         curses.curs_set(1)
         curses.endwin()
 
-    def erase_coordinate(self, x: int, y: int):
+    def erase_coordinate(self, x: int, y: int, do_erase=True):
         """Clear a single terminal coordinate"""
-        self.stdscr.addstr(y, x, " ", curses.A_NORMAL)
+        self.pad.addstr(y, x, " ", curses.A_NORMAL)
+        if do_erase: self.refresh_pad()
 
     def erase_coordinates(self, top_left_xy: tuple[int, int], bottom_right_xy: tuple[int, int]):
         """Inclusively clear all cells in a rectangle from top left to bottom right"""
         for y in range(top_left_xy[1], bottom_right_xy[1] + 1):
-            for x in range(top_left_xy[0], bottom_right_xy[1] + 1):
-                self.erase_coordinate(x, y)
+            for x in range(top_left_xy[0], bottom_right_xy[0] + 1):
+                self.erase_coordinate(x, y, False)
+        self.refresh_pad()
 
     def erase_rows(self, start_inclusive: int, stop_inclusive: int):
         """Erase a range of rows"""
-        self.erase_coordinates((0, start_inclusive), (self.stdscr.getmaxyx[1], stop_inclusive))
+        self.erase_coordinates((0, start_inclusive), (self.stdscr.getmaxyx()[1], stop_inclusive))
+
+    def refresh_pad(self):
+        """Refreshes pad using topleft corner and full screen size"""
+        self.pad.refresh(0, 0, 0, 0, self.stdscr.getmaxyx()[0] - 1, self.stdscr.getmaxyx()[1] - 1)
 
     def clear_screen(self):
         self.block_stack = []
-        self.stdscr.clear()
-        self.stdscr.refresh()
+        self.pad.clear()
+        self.pad.move(0, 0)
+        self.refresh_pad()
 
     def content_get_bool_from_user(self, prompt: str) -> bool:
-        pass
+        def draw_line(is_yes: bool):
+            self.pad.addstr(prompt + " ")
+            self.pad.addstr("YES", curses.A_REVERSE if is_yes else curses.A_NORMAL)
+            self.pad.addstr(" ")
+            self.pad.addstr("NO", curses.A_REVERSE if not is_yes else curses.A_NORMAL)
+            self.commit_block()
+
+        is_yes = True
+        while True:
+            draw_line(is_yes)
+            k = self.pad.getch()
+            if self.is_enter(k):
+                break
+            elif k == curses.KEY_RIGHT or k == curses.KEY_LEFT:
+                is_yes = not is_yes
+            self.pop_content()
+
+        return is_yes
 
     def content_press_any_key(self, text="Press any key to continue..."):
-        self.stdscr.addstr(text)
+        self.pad.addstr(text)
+        self.refresh_pad()
         while True:
-            self.stdscr.addstr(str(self.stdscr.getch()))
+            if self.pad.getch() <= 260:
+                break
         self.commit_block()
 
     def content_text_block(self, text: str):
-        pass
+        self.pad.addstr(text)
+        self.refresh_pad()
+        self.commit_block()
 
     def content_divider(self):
-        pass
+        self.pad.addstr("-" * self.stdscr.getmaxyx()[1])
+        self.refresh_pad()
+        self.commit_block()
 
     def content_get_str_from_user(self, prompt: str, hide: bool) -> str:
-        return "test"
+        s = ""
+        self.pad.addstr(prompt + " ")
+        self.refresh_pad()
+        while True:
+            k = self.pad.getch()
+            if self.is_enter(k):
+                break
+            elif k == curses.KEY_BACKSPACE:
+                s = s[:-1]
+                shift_back_pos = self.pad.getyx()[1] - 1, self.pad.getyx[0]
+                self.erase_coordinate(*shift_back_pos)
+                self.pad.move(shift_back_pos)
+            else:
+                s += chr(k)
+                if not hide:
+                    self.pad.addstr(chr(k))
+                    self.refresh_pad()
+        self.commit_block()
+
+        self.pad.addstr(20, 0, s)
+        return s
 
     def pop_content(self):
         if len(self.block_stack) > 1:
             self.erase_rows(self.block_stack[-2] + 1, self.block_stack[-1])
             self.block_stack.pop(-1)
+            self.pad.move(self.block_stack[-1] + 1, 0)
         else:
             self.clear_screen()
 
