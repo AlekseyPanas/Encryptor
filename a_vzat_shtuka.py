@@ -12,6 +12,7 @@ import random
 from abc import abstractmethod
 import signal
 import sys
+from typing import Optional
 
 if os.name == "nt":
     import msvcrt
@@ -19,28 +20,6 @@ else:
     import curses
     stdscr = curses.initscr()
     curses.cbreak(False)
-
-# define our clear function
-def clear():
-    # for windows
-    if os.name == 'nt':
-        _ = os.system('cls')
-
-        # for mac and linux(here, os.name is 'posix')
-    else:
-        _ = os.system('clear')
-
-def checkYes(mess):
-    return len(mess) and mess.strip().lower()[0] == "y"
-
-
-def press_any_key():
-    print()
-    print("Press any key to continue...")
-    if os.name == "nt":
-        msvcrt.getch()
-    else:
-        stdscr.getch()
 
 
 class Encryptor:
@@ -129,10 +108,12 @@ class Menu:
             print(e)
             traceback.print_exc()
 
-    def get_encryptor_with_prompted_key(self) -> Encryptor:
+    def get_encryptor_with_prompted_key(self) -> Optional[Encryptor]:
         """Prompt user for a new password and update encryptor"""
-        return self.get_encryptor(self.content_get_confirmed_message("Gimme the sauce:",
-                                                                     "Confirm the sauce:", True))
+        s = self.content_get_confirmed_message("Gimme the sauce:",
+                                               "Confirm the sauce:", True)
+        if s is None: return None
+        return self.get_encryptor(s)
 
     # Call this to get a new encryptor class with the prompted password
     @staticmethod
@@ -142,8 +123,6 @@ class Menu:
         key_hash = hashlib.sha256(key.encode('utf-8')).hexdigest()
         # Gets half of the hash to use as the key
         key = bytes(key_hash[:int(len(key_hash) / 2)], 'utf-8')
-        clear()
-        print()
         # Creates encryptor class
         return Encryptor(key)
 
@@ -321,17 +300,27 @@ class Menu:
             self.close = True
 
     def update_encryptor(self):
-        clear()
-        print("CHANGE DAT SAUCE")
-        print("----------------")
-        print()
-
-        self.encryptor = self.encryptor = self.get_encryptor_with_prompted_key()
+        self.clear_screen()
+        self.content_text_block("COOK NEW SAUCE")
+        self.content_divider()
+        new_encryptor = self.get_encryptor_with_prompted_key()
+        if new_encryptor is None:
+            self.content_text_block("Cooking operation has been canceled.")
+            self.content_press_any_key()
+        else:
+            self.encryptor = new_encryptor
+            self.content_text_block("Cooked new sauce successfully!")
+            self.content_press_any_key()
 
     def run_main_menu(self):
         """Runs command selection loop"""
         self.init()
-        self.encryptor = self.get_encryptor_with_prompted_key()
+
+        while True:
+            self.clear_screen()
+            self.encryptor = self.get_encryptor_with_prompted_key()
+            if self.encryptor is not None:
+                break
 
         while True:
             self.clear_screen()
@@ -340,7 +329,7 @@ class Menu:
             idx = self.content_get_index_from_list(
                 [c.opt_string for c in self.commands]
             )
-            self.commands[idx].func(self)
+            if idx is not None: self.commands[idx].func(self)
 
             # End Program
             if self.close:
@@ -455,9 +444,9 @@ class Menu:
         """Clear the screen of all content blocks"""
 
     @abstractmethod
-    def content_get_bool_from_user(self, prompt: str) -> bool:
+    def content_get_bool_from_user(self, prompt: str) -> Optional[bool]:
         """Content block prompting the user with the given prompt and return a yes (true) or
-        no (false) answer"""
+        no (false) answer. User may cancel this operation in which case None should be returned"""
 
     @abstractmethod
     def content_press_any_key(self, text="Press any key to continue..."):
@@ -472,9 +461,10 @@ class Menu:
         """Content block displaying a horizontal line divider"""
 
     @abstractmethod
-    def content_get_str_from_user(self, prompt: str, hide: bool) -> str:
+    def content_get_str_from_user(self, prompt: str, hide: bool) -> Optional[str]:
         """Prompt the user with the given prompt and return user's input string.
-        Hide user's writing if hide=True"""
+        Hide user's writing if hide=True. User may cancel this operation in
+        which case None should be returned"""
 
     def pop_contents(self, n: int):
         """Clear the latest n blocks"""
@@ -485,24 +475,35 @@ class Menu:
     def pop_content(self):
         """Clear the latest content block"""
 
-    def content_get_confirmed_message(self, prompt: str, confirmation_prompt: str, hide=True) -> str:
+    def content_get_confirmed_message(self, prompt: str, confirmation_prompt: str, hide=True) -> Optional[str]:
         """Content block prompting the user to enter a message and confirm it.
         Prompt repeatedly until confirmation matches entered message. Return the final
-        message. If hide=True, the user's input should be hidden"""
+        message. If hide=True, the user's input should be hidden. User may cancel this operation in
+        which case None should be returned"""
+        canceled = False
         while True:
             m1 = self.content_get_str_from_user(prompt, hide)
+            if m1 is None:
+                canceled = True
+                break
             m2 = self.content_get_str_from_user(confirmation_prompt, hide)
+            if m2 is None:
+                canceled = True
+                break
             if m1 == m2:
                 break
             self.content_text_block("Messages don't match!")
             self.content_press_any_key()
             self.pop_contents(4)
+
+        if canceled: return None
         return m1
 
     @abstractmethod
-    def content_get_index_from_list(self, options: list[str]) -> int:
+    def content_get_index_from_list(self, options: list[str], max_n: Optional[int] = None) -> Optional[int]:
         """Given a list of options, provide a content block which allows selecting
-        one of the options. Return the index of the selected option"""
+        one of the options. Return the index of the selected option. User may cancel this operation in
+        which case None should be returned"""
 
 
 class CursesMenu(Menu):
@@ -535,16 +536,16 @@ class CursesMenu(Menu):
         self.stdscr.clear()
         self.pad.clear()
 
-        self.content_get_str_from_user("Gimme text bruh?", False)
-        self.pad.getch()
-        self.content_divider()
-        self.pad.getch()
-        self.content_press_any_key()
-        self.pop_contents(2)
-        self.refresh_pad()
-        self.pad.getch()
-        self.content_get_bool_from_user("yes or no hmmmmm?")
-        self.pad.getch()
+        # self.content_get_str_from_user("Gimme text bruh?", False)
+        # self.pad.getch()
+        # self.content_divider()
+        # self.pad.getch()
+        # self.content_press_any_key()
+        # self.pop_contents(2)
+        # self.refresh_pad()
+        # self.pad.getch()
+        # self.content_get_bool_from_user("yes or no hmmmmm?")
+        # self.pad.getch()
 
     def destroy(self):
         curses.echo()
@@ -580,7 +581,7 @@ class CursesMenu(Menu):
         self.pad.move(0, 0)
         self.refresh_pad()
 
-    def content_get_bool_from_user(self, prompt: str) -> bool:
+    def content_get_bool_from_user(self, prompt: str) -> Optional[bool]:
         def draw_line(is_yes: bool):
             self.pad.addstr(prompt + " ")
             self.pad.addstr("YES", curses.A_REVERSE if is_yes else curses.A_NORMAL)
@@ -589,6 +590,7 @@ class CursesMenu(Menu):
             self.commit_block()
 
         is_yes = True
+        cancelled = False
         while True:
             draw_line(is_yes)
             k = self.pad.getch()
@@ -596,8 +598,12 @@ class CursesMenu(Menu):
                 break
             elif k == curses.KEY_RIGHT or k == curses.KEY_LEFT:
                 is_yes = not is_yes
+            elif k == 27:
+                cancelled = True
+                break
             self.pop_content()
 
+        if cancelled: return None
         return is_yes
 
     def content_press_any_key(self, text="Press any key to continue..."):
@@ -608,8 +614,8 @@ class CursesMenu(Menu):
                 break
         self.commit_block()
 
-    def content_text_block(self, text: str):
-        self.pad.addstr(text)
+    def content_text_block(self, text: str, flags=curses.A_NORMAL):
+        self.pad.addstr(text, flags)
         self.refresh_pad()
         self.commit_block()
 
@@ -618,27 +624,31 @@ class CursesMenu(Menu):
         self.refresh_pad()
         self.commit_block()
 
-    def content_get_str_from_user(self, prompt: str, hide: bool) -> str:
+    def content_get_str_from_user(self, prompt: str, hide: bool) -> Optional[str]:
         s = ""
         self.pad.addstr(prompt + " ")
         self.refresh_pad()
+        cancelled = False
         while True:
             k = self.pad.getch()
             if self.is_enter(k):
                 break
-            elif k == curses.KEY_BACKSPACE:
-                s = s[:-1]
-                shift_back_pos = self.pad.getyx()[1] - 1, self.pad.getyx[0]
-                self.erase_coordinate(*shift_back_pos)
-                self.pad.move(shift_back_pos)
+            elif k == 127:
+                if len(s) > 0:
+                    s = s[:-1]
+                    shift_back_pos = self.pad.getyx()[1] - 1, self.pad.getyx()[0]
+                    self.erase_coordinate(*shift_back_pos)
+                    self.pad.move(shift_back_pos[1], shift_back_pos[0])
+            elif k == 27:
+                cancelled = True
+                break
             else:
                 s += chr(k)
                 if not hide:
                     self.pad.addstr(chr(k))
                     self.refresh_pad()
         self.commit_block()
-
-        self.pad.addstr(20, 0, s)
+        if cancelled: return None
         return s
 
     def pop_content(self):
@@ -649,8 +659,40 @@ class CursesMenu(Menu):
         else:
             self.clear_screen()
 
-    def content_get_index_from_list(self, options: list[str]) -> int:
-        self.stdscr.getch()
+    def content_get_index_from_list(self, options: list[str], max_n: Optional[int] = None) -> Optional[int]:
+        i = 0
+        display_start_i = 0
+        length = len(options) if max_n is None else min(len(options), max_n)
+        cancelled = False
+
+        while True:
+            for o in range(length):
+                idx = display_start_i + o if length < len(options) else o
+
+                self.content_text_block((">" if idx == i else " ") + options[idx],
+                                        curses.A_NORMAL if idx != i else curses.A_REVERSE)
+
+            k = self.pad.getch()
+            if self.is_enter(k):
+                break
+            elif k == curses.KEY_DOWN:
+                i = (i + 1) % len(options)
+            elif k == curses.KEY_UP:
+                i = (i - 1) % len(options)
+            elif k == 27:
+                cancelled = True
+                break
+
+            if length < len(options):
+                if i < display_start_i:
+                    display_start_i = i
+                elif i >= display_start_i + length:
+                    display_start_i += i - (display_start_i + length - 1)
+
+            self.pop_contents(length)
+
+        if cancelled: return None
+        return i
 
         # for idx in range(len(self.commands)):
         #     print((">" if idx == self.cmd_index else " "), self.commands[idx].opt_string)
