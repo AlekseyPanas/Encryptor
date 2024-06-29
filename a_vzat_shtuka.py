@@ -12,6 +12,7 @@ import random
 from abc import abstractmethod
 import signal
 import sys
+import pathlib
 from typing import Optional
 
 if os.name == "nt":
@@ -126,177 +127,178 @@ class Menu:
         # Creates encryptor class
         return Encryptor(key)
 
-    @staticmethod
-    def file_navigator(header_message="SEARCH FILE"):
-        script_pathlist = __file__.split("\\")
+    def file_navigator(self, header_message="SEARCH FILE") -> Optional[str]:
+        """Let the user choose a file and return the absolute file path of chosen file. Return
+        None if user cancelled the operation"""
+        script_pathlist = list(pathlib.Path(__file__).parts)
         script_filename = script_pathlist[-1]
         current_path = script_pathlist[0:len(script_pathlist) - 1]
 
         def get_path(pathlist):
-            return "/".join(pathlist)
+            return str(os.path.join(*pathlist))
 
         def get_files(pathlist):
             return [".."] + [i for i in os.listdir(get_path(pathlist)) if i != script_filename]
 
         files = get_files(current_path)
-        file_idx = 0
+
+        self.content_text_block(header_message + " (ESC to cancel)")
+        self.content_divider()
 
         while True:
-            clear()
-            print(header_message, "(ESC to cancel)")
-            print("-----------")
+            idx = self.content_get_index_from_list(files)
+            if idx is None:
+                return None
 
-            for idx in range(len(files)):
-                print((">" if idx == file_idx else " "), files[idx])
+            if files[idx] == "..":
+                current_path.pop(-1)
+                files = get_files(current_path)
 
-            print()
-            print()
-            print("This is where the cursor lives:")
+            elif os.path.isdir(get_path(current_path + [files[idx]])):
+                current_path.append(files[idx])
+                files = get_files(current_path)
 
-            if os.name == "nt":
-                nextKey = msvcrt.getch()
             else:
-                nextKey = stdscr.getch()
+                current_path.append(files[idx])
+                return get_path(current_path)
 
-            if (nextKey == b"P" and os.name == "nt") or (os.name != "nt" and nextKey == curses.KEY_DOWN):
-                file_idx += 1
-
-                if file_idx >= len(files):
-                    file_idx = 0
-            if (nextKey == b"H" and os.name == "nt") or (os.name != "nt" and nextKey == curses.KEY_UP):
-                file_idx -= 1
-
-                if file_idx < 0:
-                    file_idx = len(files) - 1
-            if (nextKey == b"\r" and os.name == "nt") or (os.name != "nt" and nextKey == curses.KEY_ENTER):
-                if files[file_idx] == "..":
-                    current_path.pop(-1)
-                    files = get_files(current_path)
-                    file_idx = 0
-                elif os.path.isdir(get_path(current_path + [files[file_idx]])):
-                    current_path.append(files[file_idx])
-                    files = get_files(current_path)
-                    file_idx = 0
-                else:
-                    current_path.append(files[file_idx])
-                    return get_path(current_path)
-            if (nextKey == b"\x1b" and os.name == "nt") or (os.name != "nt" and nextKey == 27):
-                return -1
+            self.pop_content()
 
     def generate_password(self):
-        clear()
+        self.clear_screen()
+
         valid = False
         while not valid:
-            length = input("Password Length: ")
+            length = self.content_get_str_from_user("Password Length:", False)
+            if length is None:
+                return
+            length = length.strip()
             try:
                 length = int(length)
                 valid = True
             except Exception:
-                print("Enter a valid number")
+                self.content_text_block("Enter a valid number!")
 
-        clear()
+        self.clear_screen()
         letters = "abcdefghijklmnopqrstuvwxyz"
         caps = letters.upper()
         nums = "1234567890"
         symbols = "!@#$%^&*()-=_+,.<>"
         all_text = letters + caps + nums + symbols
         pyperclip.copy("".join([random.choice(all_text) for _ in range(length)]))
-        print("Your password has been copied!")
-        press_any_key()
+        self.content_text_block("Your password has been copied!")
+        self.content_press_any_key()
 
     def clear_clipboard(self):
-        clear()
-
+        self.clear_screen()
         pyperclip.copy(" ")
-        print("clipboard cleared")
-        print()
-
-        press_any_key()
+        self.content_text_block("clipboard cleared")
+        self.content_text_block(" ")
+        self.content_press_any_key()
 
     def dec_file2clip(self):
+        self.clear_screen()
+
         # Prompts user to select an existing file
         filename = self.file_navigator("DECRYPT FILE -> CLIPBOARD")
-        clear()
+        if filename is None:
+            return
+        self.clear_screen()
 
-        if filename != -1:
-            # Decrypts and prints
-            with open(filename, 'rb') as file:
-                cipherText = file.read()
-            dec = self.encryptor.decrypt(cipherText)
+        # Decrypts and prints
+        with open(filename, 'rb') as file:
+            cipherText = file.read()
+        dec = self.encryptor.decrypt(cipherText)
 
-            try:
-                pyperclip.copy(str(dec)[2:len(dec) + 2])
-                print("Your message has been copied")  # For actual message: str(dec))
-            except Exception as e:
-                print("An Error Occurred while decrypting:")
-                print(e)
+        try:
+            pyperclip.copy(str(dec)[2:len(dec) + 2])
+            self.content_text_block("Your message has been copied")  # For actual message: str(dec))
+        except Exception as e:
+            self.content_text_block("An Error Occurred while decrypting:")
+            self.content_text_block(str(e))
 
-        press_any_key()
+        self.content_press_any_key()
 
     def dec_file2file(self):
+        self.clear_screen()
+
         # Prompts user to select an existing file
         filename = self.file_navigator("DECRYPT FILE -> FILE")
-        clear()
+        if filename is None:
+            return
+        self.clear_screen()
 
-        if filename != -1:
-            self.encryptor.decrypt_file(filename)
+        self.encryptor.decrypt_file(filename)
 
-            remove = input("Remove old file? (y/n)")
+        remove = self.content_get_bool_from_user("Remove old file?")
 
-            if checkYes(remove):
-                os.remove(filename)
-                print("FILE REMOVED")
-            else:
-                print("FILE NOT REMOVED")
+        if remove is not None and remove:
+            os.remove(filename)
+            self.content_text_block("FILE REMOVED")
+        else:
+            self.content_text_block("FILE NOT REMOVED")
 
-        press_any_key()
+        self.content_press_any_key()
 
     def enc_file2file(self):
+        self.clear_screen()
+
         # Prompts user to select an existing file
         filename = self.file_navigator("ENCRYPT FILE -> FILE")
-        clear()
+        if filename is None:
+            return
+        self.clear_screen()
 
-        if filename != -1:
-            self.encryptor.encrypt_file(filename)
+        self.encryptor.encrypt_file(filename)
 
-            remove = input("Remove old file? (y/n)")
+        remove = self.content_get_bool_from_user("Remove old file?")
 
-            if checkYes(remove):
-                os.remove(filename)
-                print("FILE REMOVED")
-            else:
-                print("FILE NOT REMOVED")
+        if remove is not None and remove:
+            os.remove(filename)
+            self.content_text_block("FILE REMOVED")
+        else:
+            self.content_text_block("FILE NOT REMOVED")
 
-        press_any_key()
+        self.content_press_any_key()
 
     def enc_inp2file(self):
-        clear()
-        print("ENCRYPT INPUT -> FILE")
-        print("----------------")
+        self.clear_screen()
+        self.content_text_block("ENCRYPT INPUT -> FILE")
+        self.content_divider()
 
         # Prompts user to select a filename that does not exist yet
-        valid = False
-        while not valid:
-            filename = input("Name your file: ")
+        while True:
+            filename = self.content_get_str_from_user("Name your file:", False)
+            if filename is None:
+                return
+            filename = filename.strip()
             if os.path.exists(filename):
-                print("Error: File already exists!")
+                self.content_text_block("Error: File already exists!")
+                self.content_press_any_key("...")
+                self.pop_contents(3)
             else:
-                valid = True
-            print()
+                self.content_text_block("")
+                break
 
         # Prompts user to enter desired message
-        message = input("What message would you like to encrypt? ")
+        message = self.content_get_str_from_user("What message would you like to encrypt?", False)
+        if message is None:
+            return
+        message = message.strip()
 
         # Save message to desired file in encrypted form
         with open(filename + ".enc", "wb") as file:
             enc = self.encryptor.encrypt(message)
             file.write(enc)
 
-        press_any_key()
+        self.content_press_any_key()
 
     def close_program(self):
-        clear()
-        if checkYes(input("Are you sure? ")):
+        self.clear_screen()
+        res = self.content_get_bool_from_user("Are you sure?")
+        if res is None:
+            return
+        elif res:
             self.close = True
 
     def update_encryptor(self):
@@ -336,100 +338,6 @@ class Menu:
                 break
 
         self.destroy()
-
-    # Call this right after getting the encrytor key to perform initial setup for the VALIDATE file
-    def run_validation(self):
-        self.clear_screen()
-        # Allows user to validate the password they entered by checking a validation file
-        if not os.listdir().__contains__("VALIDATE"):
-            # If Yes, creates file
-            #if checkYes(input("Would you like to create a validation file? ")):
-            if self.content_get_bool_from_user("Would you like to create a validation file?"):
-                self.create_validation_file(self.get_validation_message())
-        else:
-            self.check_validation()
-
-        self.content_press_any_key()
-
-    # Call this whenever you want to invoke a setup of the VALIDATE file from the menu
-    def validation_setup(self):
-        clear()
-        print("VALIDATION SETUP")
-        print("----------------")
-        print()
-
-        if not os.listdir().__contains__("VALIDATE"):
-            # If Yes, creates file
-            if checkYes(input("Would you like to create a validation file? ")):
-                self.create_validation_file(self.get_validation_message())
-
-        else:
-            with open("VALIDATE", "wb") as file:
-                file.truncate()
-                file.write(self.get_validation_message())
-
-        press_any_key()
-
-    # Asks for a password secret validation message and returns its encrypted form
-    def get_validation_message(self):
-        return self.encryptor.encrypt(self.content_get_confirmed_message("Enter a message to validate:", "Confirm your message:"))
-        # valid = False
-        # while not valid:
-        #     # Asks for message
-        #     validate_mess = getpass.getpass("Enter a message to validate: ")
-        #     # Confirms the message
-        #     if getpass.getpass("Confirm your message: ") == validate_mess:
-        #         valid = True
-        #     else:
-        #         print()
-        #         print("Confirmation failed! Try again.")
-        #         print()
-        # return self.encryptor.encrypt(validate_mess)
-
-    # Creates a new validation file with the given message (message must be given encrypted)
-    @staticmethod
-    def create_validation_file(validate_mess):
-        with open("VALIDATE", "wb") as file:
-            file.write(validate_mess)
-
-    # Executable as a menu option
-    def check_validate_menu_option(self):
-        clear()
-        if os.listdir().__contains__("VALIDATE"):
-            self.check_validation()
-        else:
-            print("Validation file not found. Please run setup")
-        press_any_key()
-
-    # Asks user if they would like to confirm validation. Goes through verification procedure
-    def check_validation(self):
-        # Asks user to try validation
-        if checkYes(input("Would you like to validate? ")):
-            # Reads encrypted file
-            with open("VALIDATE", 'rb') as file:
-                cipherText = file.read()
-            # Asks user for message check
-            valid = False
-            while not valid:
-                clear()
-                mess = input("Please enter the message in VALIDATE: ")
-                # Checks if message matches decrypted validation file
-                dec = self.encryptor.decrypt(cipherText)
-                failed = False
-                try:
-                    dec.decode("utf-8")
-                # Exception gets thrown if decryption done with wrong password
-                except Exception:
-                    failed = True
-                if failed or mess != self.encryptor.decrypt(cipherText).decode("utf-8"):
-                    print(">>> Validation Failed!!!")
-                    print()
-                    if not checkYes(input("Would you like to re-enter your message? ")):
-                        valid = True
-                else:
-                    print(">>> Validation Successful!!!")
-                    print()
-                    valid = True
 
     @abstractmethod
     def init(self):
@@ -500,10 +408,11 @@ class Menu:
         return m1
 
     @abstractmethod
-    def content_get_index_from_list(self, options: list[str], max_n: Optional[int] = None) -> Optional[int]:
+    def content_get_index_from_list(self, options: list[str]) -> Optional[int]:
         """Given a list of options, provide a content block which allows selecting
         one of the options. Return the index of the selected option. User may cancel this operation in
-        which case None should be returned"""
+        which case None should be returned. If clear_when_done is True, this content block should clear
+        itself before returning"""
 
 
 class CursesMenu(Menu):
@@ -530,22 +439,12 @@ class CursesMenu(Menu):
         curses.start_color()
         curses.noecho()
         curses.cbreak()
-        #curses.curs_set(0)
+        curses.curs_set(0)
         self.stdscr.keypad(True)
         self.pad.keypad(True)
         self.stdscr.clear()
         self.pad.clear()
-
-        # self.content_get_str_from_user("Gimme text bruh?", False)
-        # self.pad.getch()
-        # self.content_divider()
-        # self.pad.getch()
-        # self.content_press_any_key()
-        # self.pop_contents(2)
-        # self.refresh_pad()
-        # self.pad.getch()
-        # self.content_get_bool_from_user("yes or no hmmmmm?")
-        # self.pad.getch()
+        curses.set_escdelay(1)
 
     def destroy(self):
         curses.echo()
@@ -553,6 +452,7 @@ class CursesMenu(Menu):
         self.pad.keypad(False)
         curses.nocbreak()
         curses.curs_set(1)
+        curses.set_escdelay(25)
         curses.endwin()
 
     def erase_coordinate(self, x: int, y: int, do_erase=True):
@@ -636,13 +536,16 @@ class CursesMenu(Menu):
             elif k == 127:
                 if len(s) > 0:
                     s = s[:-1]
-                    shift_back_pos = self.pad.getyx()[1] - 1, self.pad.getyx()[0]
-                    self.erase_coordinate(*shift_back_pos)
-                    self.pad.move(shift_back_pos[1], shift_back_pos[0])
+                    if not hide:
+                        shift_back_pos = self.pad.getyx()[1] - 1, self.pad.getyx()[0]
+                        self.erase_coordinate(*shift_back_pos)
+                        self.pad.move(shift_back_pos[1], shift_back_pos[0])
             elif k == 27:
                 cancelled = True
                 break
-            else:
+            elif 0 <= k < 0x110000:
+                # self.pad.addstr(20, 0, str(k))
+                # self.refresh_pad()
                 s += chr(k)
                 if not hide:
                     self.pad.addstr(chr(k))
@@ -660,6 +563,7 @@ class CursesMenu(Menu):
             self.clear_screen()
 
     def content_get_index_from_list(self, options: list[str], max_n: Optional[int] = None) -> Optional[int]:
+        max_n = self.stdscr.getmaxyx()[0] - self.pad.getyx()[0] - 2
         i = 0
         display_start_i = 0
         length = len(options) if max_n is None else min(len(options), max_n)
@@ -669,8 +573,10 @@ class CursesMenu(Menu):
             for o in range(length):
                 idx = display_start_i + o if length < len(options) else o
 
-                self.content_text_block((">" if idx == i else " ") + options[idx],
-                                        curses.A_NORMAL if idx != i else curses.A_REVERSE)
+                self.pad.addstr((">" if idx == i else " ") + options[idx],
+                                curses.A_NORMAL if idx != i else curses.A_REVERSE)
+                self.pad.move(self.pad.getyx()[0] + 1, 0)
+            self.commit_block()
 
             k = self.pad.getch()
             if self.is_enter(k):
@@ -689,37 +595,10 @@ class CursesMenu(Menu):
                 elif i >= display_start_i + length:
                     display_start_i += i - (display_start_i + length - 1)
 
-            self.pop_contents(length)
+            self.pop_content()
 
         if cancelled: return None
         return i
-
-        # for idx in range(len(self.commands)):
-        #     print((">" if idx == self.cmd_index else " "), self.commands[idx].opt_string)
-        #
-        # print()
-        # print()
-        # print("This is where the cursor lives:")
-        #
-        # if os.name == "nt":
-        #     nextKey = msvcrt.getch()
-        # else:
-        #     nextKey = stdscr.getch()
-        #
-        # if (nextKey == b"P" and os.name == "nt") or (os.name != "nt" and nextKey == curses.KEY_DOWN):
-        #     self.cmd_index += 1
-        #
-        #     if self.cmd_index >= len(self.commands):
-        #         self.cmd_index = 0
-        # if (nextKey == b"H" and os.name == "nt") or (os.name != "nt" and nextKey == curses.KEY_UP):
-        #     self.cmd_index -= 1
-        #
-        #     if self.cmd_index < 0:
-        #         self.cmd_index = len(self.commands) - 1
-        # if (nextKey == b"\r" and os.name == "nt") or (os.name != "nt" and nextKey == curses.KEY_ENTER):
-        #     self.commands[self.cmd_index].func(self)
-        #
-        # # TODO: Fix
 
 
 MENU = CursesMenu()
