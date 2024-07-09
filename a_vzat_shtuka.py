@@ -140,13 +140,13 @@ class Menu:
         def get_files(pathlist):
             return [".."] + [i for i in os.listdir(get_path(pathlist)) if i != script_filename]
 
-        files = get_files(current_path)
+        files = sorted(get_files(current_path), key=lambda x: x.lower())
 
         self.content_text_block(header_message + " (ESC to cancel)")
         self.content_divider()
 
         while True:
-            idx = self.content_get_index_from_list(sorted(files, key=lambda x: x.lower()))
+            idx = self.content_get_index_from_list(files)
             if idx is None:
                 return None
 
