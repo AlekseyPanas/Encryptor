@@ -138,9 +138,10 @@ class Menu:
             return str(os.path.join(*pathlist))
 
         def get_files(pathlist):
-            return [".."] + [i for i in os.listdir(get_path(pathlist)) if i != script_filename]
+            return sorted([".."] + [i for i in os.listdir(get_path(pathlist)) if i != script_filename],
+                          key=lambda x: x.lower())
 
-        files = sorted(get_files(current_path), key=lambda x: x.lower())
+        files = get_files(current_path)
 
         self.content_text_block(header_message + " (ESC to cancel)")
         self.content_divider()
