@@ -146,7 +146,7 @@ class Menu:
         self.content_divider()
 
         while True:
-            idx = self.content_get_index_from_list(files)
+            idx = self.content_get_index_from_list(sorted(files, key=lambda x: x.lower()))
             if idx is None:
                 return None
 
